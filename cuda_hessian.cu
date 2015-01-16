@@ -56,22 +56,21 @@ void loadImg(float *img, char* fname, int w, int h)
 
 
 
-__global__ void buildResponseLayer(float* img, ResponseLayer *rl, float *
+__global__ void buildResponseLayer(float* img, int height, int width, int step, int filter, float *
         responses)
 {
-    int step = rl->step;
-    int b = (rl->filter - 1) / 2 + 1;
-    int l = rl->filter / 3;
-    int w = rl->filter;
+    int b = (filter - 1) / 2 + 1;
+    int l = filter / 3;
+    int w = filter;
     float inverse_area = 1.f/(w*w);
     float Dxx, Dyy, Dxy;
 
 
     int idx = blockIdx.x * blockDim.x + blockIdx.y;
 
-    for(int r, c, ar = 0, index = 0; ar < rl->height; ++ar)
+    for(int r, c, ar = 0, index = 0; ar < height; ++ar)
     {
-        for(int ac = idx; ac < rl->width; ac+=idx, index+=idx)
+        for(int ac = idx; ac < width; ac+=idx, index+=idx)
         {
             r = ar * step;
             c = ac * step;
@@ -89,7 +88,7 @@ __global__ void buildResponseLayer(float* img, ResponseLayer *rl, float *
             Dyy *= inverse_area;
             Dxy *= inverse_area;
 
-            responses[index] = (Dxx * Dyy - 0.81f *Dxy * Dxy);
+            responses[index] = (Dxx * Dyy - 0.9f *Dxy * Dxy);
         }
     }
 }
@@ -100,7 +99,7 @@ void checkResponse(ResponseLayer *rl)
             rl->step, rl->filter);
     float * responses = rl->responses;
     
-    for(int i=0; i<rl->height; ++i)
+    for(int i=0; i<1; ++i)
     {
         for(int j=0; j<rl->width; ++j)
             printf("%f ",responses[i*rl->width+j]);
@@ -154,14 +153,12 @@ int main()
 
     cudaMalloc((void **) &cuda_img, img_size);
     cudaMemcpy(cuda_img, img, img_size, cudaMemcpyHostToDevice);
-    printf("%f\n", img[0]);
-    printf("%f\n", cuda_img[0]);
 
     for(int i=0; i<responseMap.size(); ++i) {
         ResponseLayer *tmp = responseMap[i];
         int response_size = (tmp->width) * (tmp->height) * sizeof(float);
         cudaMalloc((void **)&cuda_responses[i], response_size);
-        buildResponseLayer<<<grid, block>>>(cuda_img, responseMap[i], cuda_responses[i]);
+        buildResponseLayer<<<grid, block>>>(cuda_img, tmp->height, tmp->width, tmp->step, tmp->filter, cuda_responses[i]);
         cudaMemcpy(tmp->responses, cuda_responses[i], response_size,
                 cudaMemcpyDeviceToHost);
 
@@ -185,7 +182,7 @@ int main()
     /*}*/
 
     
-    /*checkResponse(responseMap[0]);*/
+    checkResponse(responseMap[0]);
 
 
 
