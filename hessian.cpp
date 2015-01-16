@@ -10,8 +10,6 @@ This is the CUDA implementation of hessian.cpp
 #include <math.h>
 #include <algorithm>
 
-#include <cuda_runtime.h>
-
 
 #include "responselayer.h"
 
@@ -27,12 +25,9 @@ const int step = 1;
 int scales[OCTAVES][INTERVALS] = {{9,15,21,27}, {15,27,39,51}, {27,51,75,99},
 51,99,147,195};
 
-float *cuda_img, **cuda_responses;
-
-
-
 void loadImg(float *, char *, int, int);
-__device__ float BoxIntegral(float *, int, int, int, int);
+void buildResponseLayer(float *, ResponseLayer *);
+float BoxIntegral(float *, int, int, int, int);
 
 
 void loadImg(float *img, char* fname, int w, int h)
@@ -56,9 +51,9 @@ void loadImg(float *img, char* fname, int w, int h)
 
 
 
-__global__ void buildResponseLayer(float* img, ResponseLayer *rl, float *
-        responses)
+void buildResponseLayer(float* img, ResponseLayer *rl)
 {
+    float *responses = rl->responses;
     int step = rl->step;
     int b = (rl->filter - 1) / 2 + 1;
     int l = rl->filter / 3;
@@ -66,12 +61,9 @@ __global__ void buildResponseLayer(float* img, ResponseLayer *rl, float *
     float inverse_area = 1.f/(w*w);
     float Dxx, Dyy, Dxy;
 
-
-    int idx = blockIdx.x * blockDim.x + blockIdx.y;
-
     for(int r, c, ar = 0, index = 0; ar < rl->height; ++ar)
     {
-        for(int ac = idx; ac < rl->width; ac+=idx, index+=idx)
+        for(int ac = 0; ac < rl->width; ++ac, ++index)
         {
             r = ar * step;
             c = ac * step;
@@ -109,7 +101,7 @@ void checkResponse(ResponseLayer *rl)
 
 }
 
-__device__ float BoxIntegral(float* img, int row, int col, int rows, int cols)
+float BoxIntegral(float* img, int row, int col, int rows, int cols)
 {
     int r1 = min(row, height) - 1;
     int c1 = min(col, width) - 1;
@@ -145,47 +137,16 @@ int main()
         }
     }
 
-    dim3 grid(1,1);
-    dim3 block(32);
-
-    int img_size = width*height*sizeof(float);
-    printf("img_size: %d\n", img_size);
-    cuda_responses = new float*[responseMap.size()];
-
-    cudaMalloc((void **) &cuda_img, img_size);
-    cudaMemcpy(cuda_img, img, img_size, cudaMemcpyHostToDevice);
-    printf("%f\n", img[0]);
-    printf("%f\n", cuda_img[0]);
-
+    // nonparallel implementation
     for(int i=0; i<responseMap.size(); ++i) {
         ResponseLayer *tmp = responseMap[i];
-        int response_size = (tmp->width) * (tmp->height) * sizeof(float);
-        cudaMalloc((void **)&cuda_responses[i], response_size);
-        buildResponseLayer<<<grid, block>>>(cuda_img, responseMap[i], cuda_responses[i]);
-        cudaMemcpy(tmp->responses, cuda_responses[i], response_size,
-                cudaMemcpyDeviceToHost);
-
+        /*printf("%d %d %d %d\n", tmp->width, tmp->height, tmp->step,*/
+            /*tmp->filter);*/
+        buildResponseLayer(img, responseMap[i]);
     }
-
-    cudaFree(cuda_img);
-    for(int i=0; i<responseMap.size(); ++i) {
-        cudaFree(cuda_responses[i]);
-    }
-
-    delete cuda_responses;
-
-
-
-    // nonparallel implementation
-    /*for(int i=0; i<responseMap.size(); ++i) {*/
-        /*ResponseLayer *tmp = responseMap[i];*/
-        /*[>printf("%d %d %d %d\n", tmp->width, tmp->height, tmp->step,<]*/
-            /*[>tmp->filter);<]*/
-        /*buildResponseLayer(img, responseMap[i]);*/
-    /*}*/
 
     
-    /*checkResponse(responseMap[0]);*/
+    checkResponse(responseMap[0]);
 
 
 
